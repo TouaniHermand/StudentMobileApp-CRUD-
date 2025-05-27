@@ -1,24 +1,24 @@
 {
   "expo": {
-    "name": "CrudEtudiant",
-    "slug": "CrudEtudiant",
+    "name": "EduSphere ENSPD",
+    "slug": "EduSphere ENSPD",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon.jpg",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/icon.jpg",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0f172a"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/icon.jpg",
+        "backgroundColor": "#0f172a"
       },
       "edgeToEdgeEnabled": true
     },
