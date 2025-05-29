@@ -1,249 +1,188 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  type ReactNode,
-} from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { Etudiant, EtudiantContextType } from "../types";
-import { etudiantService } from "../services/api";
+import React, { createContext, useContext, useReducer, useCallback, ReactNode } from 'react';
+import { StudentService } from '../services/StudentService';
+import { Etudiant, EtudiantCreate, EtudiantUpdate } from '../types';
 
-const EtudiantContext = createContext<EtudiantContextType | undefined>(
-  undefined
-);
+interface EtudiantState {
+  etudiants: Etudiant[];
+  loading: boolean;
+  error: string | null;
+  total: number;
+  currentPage: number;
+}
 
-// Données mockées pour le développement (à supprimer quand l'API est prête)
-const etudiantsMock: Etudiant[] = [
-  {
-    id: "1",
-    matricule: "UPD2024001",
-    nom: "Mballa",
-    prenom: "Jean Pierre",
-    email: "jean.mballa@upd.cm",
-    telephone: "+237690123456",
-    dateNaissance: "2000-05-15",
-    filiere: "Génie Informatique",
-    niveau: "Licence 3",
-    adresse: "Douala, Cameroun",
-    photo: "/placeholder.svg?height=100&width=100",
-    dateInscription: "2022-09-01",
-    statut: "actif",
-  },
-  {
-    id: "2",
-    matricule: "UPD2024002",
-    nom: "Nguema",
-    prenom: "Marie Claire",
-    email: "marie.nguema@upd.cm",
-    telephone: "+237677654321",
-    dateNaissance: "1999-12-03",
-    filiere: "Génie Civil",
-    niveau: "Master 1",
-    adresse: "Yaoundé, Cameroun",
-    photo: "/placeholder.svg?height=100&width=100",
-    dateInscription: "2021-09-01",
-    statut: "actif",
-  },
-  {
-    id: "3",
-    matricule: "UPD2024003",
-    nom: "Fouda",
-    prenom: "Alain",
-    email: "alain.fouda@upd.cm",
-    telephone: "+237698765432",
-    dateNaissance: "2001-03-10",
-    filiere: "Génie Électrique",
-    niveau: "Licence 2",
-    adresse: "Bafoussam, Cameroun",
-    photo: "/placeholder.svg?height=100&width=100",
-    dateInscription: "2023-09-01",
-    statut: "actif",
-  },
-];
+type EtudiantAction = 
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_ETUDIANTS'; payload: { etudiants: Etudiant[]; total: number } }
+  | { type: 'ADD_ETUDIANT'; payload: Etudiant }
+  | { type: 'UPDATE_ETUDIANT'; payload: Etudiant }
+  | { type: 'DELETE_ETUDIANT'; payload: number }
+  | { type: 'SET_PAGE'; payload: number };
+
+const initialState: EtudiantState = {
+  etudiants: [],
+  loading: false,
+  error: null,
+  total: 0,
+  currentPage: 0,
+};
+
+function etudiantReducer(state: EtudiantState, action: EtudiantAction): EtudiantState {
+  switch (action.type) {
+    case 'SET_LOADING':
+      return { ...state, loading: action.payload };
+    case 'SET_ERROR':
+      return { ...state, error: action.payload, loading: false };
+    case 'SET_ETUDIANTS':
+      return {
+        ...state,
+        etudiants: action.payload.etudiants,
+        total: action.payload.total,
+        loading: false,
+        error: null,
+      };
+    case 'ADD_ETUDIANT':
+      return {
+        ...state,
+        etudiants: [action.payload, ...state.etudiants],
+        total: state.total + 1,
+        loading: false,
+        error: null,
+      };
+    case 'UPDATE_ETUDIANT':
+      return {
+        ...state,
+        etudiants: state.etudiants.map(e => 
+          e.id === action.payload.id ? action.payload : e
+        ),
+        loading: false,
+        error: null,
+      };
+    case 'DELETE_ETUDIANT':
+      return {
+        ...state,
+        etudiants: state.etudiants.filter(e => e.id !== action.payload),
+        total: state.total - 1,
+        loading: false,
+        error: null,
+      };
+    case 'SET_PAGE':
+      return { ...state, currentPage: action.payload };
+    default:
+      return state;
+  }
+}
+
+interface EtudiantContextType {
+  // State
+  etudiants: Etudiant[];
+  loading: boolean;
+  error: string | null;
+  total: number;
+  currentPage: number;
+  
+  // Actions
+  chargerEtudiants: (page?: number) => Promise<void>;
+  obtenirEtudiant: (id: number) => Etudiant | undefined;
+  creerEtudiant: (data: EtudiantCreate) => Promise<void>;
+  modifierEtudiant: (id: number, data: EtudiantUpdate) => Promise<void>;
+  supprimerEtudiant: (id: number) => Promise<void>;
+  rechercherEtudiants: (query: string) => Promise<void>;
+}
+
+const EtudiantContext = createContext<EtudiantContextType | undefined>(undefined);
 
 export function EtudiantProvider({ children }: { children: ReactNode }) {
-  const [etudiants, setEtudiants] = useState<Etudiant[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [state, dispatch] = useReducer(etudiantReducer, initialState);
+  const studentService = new StudentService();
 
-  // Charger les étudiants depuis l'API ou le cache local
-  const chargerEtudiants = async () => {
-    if (initialLoading) {
-      setInitialLoading(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-
+  const chargerEtudiants = useCallback(async (page = 0) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    
     try {
-      // Simuler un délai pour voir l'animation
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Essayer de charger depuis l'API
-      const etudiantsAPI = await etudiantService.getAll();
-      setEtudiants(etudiantsAPI);
-
-      // Sauvegarder en cache local
-      await AsyncStorage.setItem("etudiants", JSON.stringify(etudiantsAPI));
-    } catch (error) {
-      console.warn("Erreur API, utilisation des données mockées:", error);
-
-      // En cas d'erreur, utiliser les données mockées ou le cache
-      try {
-        const etudiantsCache = await AsyncStorage.getItem("etudiants");
-        if (etudiantsCache) {
-          setEtudiants(JSON.parse(etudiantsCache));
-        } else {
-          setEtudiants(etudiantsMock);
-        }
-      } catch (cacheError) {
-        setEtudiants(etudiantsMock);
-      }
-
-      setError("Mode hors ligne - Données locales utilisées");
-    } finally {
-      if (initialLoading) {
-        setInitialLoading(false);
-      } else {
-        setLoading(false);
-      }
+      const result = await studentService.getAllStudents(page, 20);
+      dispatch({ type: 'SET_ETUDIANTS', payload: { etudiants: result.students, total: result.total } });
+      dispatch({ type: 'SET_PAGE', payload: page });
+    } catch (error: any) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
     }
-  };
-
-  // Ajouter un étudiant
-  const ajouterEtudiant = async (nouvelEtudiant: Omit<Etudiant, "id">) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Simuler un délai pour voir l'animation
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const etudiantCree = await etudiantService.create(nouvelEtudiant);
-      setEtudiants((prev) => [...prev, etudiantCree]);
-    } catch (error) {
-      // Mode hors ligne - ajouter localement
-      const etudiantLocal: Etudiant = {
-        ...nouvelEtudiant,
-        id: Date.now().toString(),
-      };
-      setEtudiants((prev) => [...prev, etudiantLocal]);
-      setError("Ajouté en mode hors ligne");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Modifier un étudiant
-  const modifierEtudiant = async (
-    id: string,
-    etudiantModifie: Partial<Etudiant>
-  ) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Simuler un délai pour voir l'animation
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const etudiantMisAJour = await etudiantService.update(
-        id,
-        etudiantModifie
-      );
-      setEtudiants((prev) =>
-        prev.map((etudiant) =>
-          etudiant.id === id ? etudiantMisAJour : etudiant
-        )
-      );
-    } catch (error) {
-      // Mode hors ligne - modifier localement
-      setEtudiants((prev) =>
-        prev.map((etudiant) =>
-          etudiant.id === id ? { ...etudiant, ...etudiantModifie } : etudiant
-        )
-      );
-      setError("Modifié en mode hors ligne");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Supprimer un étudiant
-  const supprimerEtudiant = async (id: string) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Simuler un délai pour voir l'animation
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      await etudiantService.delete(id);
-      setEtudiants((prev) => prev.filter((etudiant) => etudiant.id !== id));
-    } catch (error) {
-      // Mode hors ligne - supprimer localement
-      setEtudiants((prev) => prev.filter((etudiant) => etudiant.id !== id));
-      setError("Supprimé en mode hors ligne");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Obtenir un étudiant par ID
-  const obtenirEtudiant = (id: string): Etudiant | undefined => {
-    return etudiants.find((etudiant) => etudiant.id === id);
-  };
-
-  // Rechercher des étudiants
-  const rechercherEtudiants = async (terme: string) => {
-    if (!terme.trim()) {
-      await chargerEtudiants();
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const resultats = await etudiantService.search(terme);
-      setEtudiants(resultats);
-    } catch (error) {
-      // Recherche locale en cas d'erreur
-      const resultatsLocaux = etudiants.filter(
-        (etudiant) =>
-          etudiant.nom.toLowerCase().includes(terme.toLowerCase()) ||
-          etudiant.prenom.toLowerCase().includes(terme.toLowerCase()) ||
-          etudiant.matricule.toLowerCase().includes(terme.toLowerCase()) ||
-          etudiant.filiere.toLowerCase().includes(terme.toLowerCase())
-      );
-      setEtudiants(resultatsLocaux);
-      setError("Recherche locale uniquement");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Charger les données au démarrage
-  useEffect(() => {
-    chargerEtudiants();
   }, []);
 
+  const obtenirEtudiant = useCallback((id: number) => {
+    return state.etudiants.find(e => e.id === id);
+  }, [state.etudiants]);
+
+  const creerEtudiant = useCallback(async (data: EtudiantCreate) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    
+    try {
+      const nouvelEtudiant = await studentService.createStudent(data);
+      dispatch({ type: 'ADD_ETUDIANT', payload: nouvelEtudiant });
+    } catch (error: any) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+      throw error;
+    }
+  }, []);
+
+  const modifierEtudiant = useCallback(async (id: number, data: EtudiantUpdate) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    
+    try {
+      const etudiantModifie = await studentService.updateStudent(id, data);
+      dispatch({ type: 'UPDATE_ETUDIANT', payload: etudiantModifie });
+    } catch (error: any) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+      throw error;
+    }
+  }, []);
+
+  const supprimerEtudiant = useCallback(async (id: number) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    
+    try {
+      await studentService.deleteStudent(id);
+      dispatch({ type: 'DELETE_ETUDIANT', payload: id });
+    } catch (error: any) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+      throw error;
+    }
+  }, []);
+
+  const rechercherEtudiants = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      return chargerEtudiants(0);
+    }
+    
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+    
+    try {
+      const result = await studentService.searchStudents(query, 0, 20);
+      dispatch({ type: 'SET_ETUDIANTS', payload: { etudiants: result.students, total: result.total } });
+      dispatch({ type: 'SET_PAGE', payload: 0 });
+    } catch (error: any) {
+      dispatch({ type: 'SET_ERROR', payload: error.message });
+    }
+  }, [chargerEtudiants]);
+
   return (
-    <EtudiantContext.Provider
-      value={{
-        etudiants,
-        loading,
-        initialLoading,
-        error,
-        ajouterEtudiant,
-        modifierEtudiant,
-        supprimerEtudiant,
-        obtenirEtudiant,
-        chargerEtudiants,
-        rechercherEtudiants,
-      }}
-    >
+    <EtudiantContext.Provider value={{
+      etudiants: state.etudiants,
+      loading: state.loading,
+      error: state.error,
+      total: state.total,
+      currentPage: state.currentPage,
+      chargerEtudiants,
+      obtenirEtudiant,
+      creerEtudiant,
+      modifierEtudiant,
+      supprimerEtudiant,
+      rechercherEtudiants,
+    }}>
       {children}
     </EtudiantContext.Provider>
   );
@@ -251,8 +190,8 @@ export function EtudiantProvider({ children }: { children: ReactNode }) {
 
 export function useEtudiants() {
   const context = useContext(EtudiantContext);
-  if (context === undefined) {
-    throw new Error("useEtudiants must be used within an EtudiantProvider");
+  if (!context) {
+    throw new Error('useEtudiants doit être utilisé dans EtudiantProvider');
   }
   return context;
 }

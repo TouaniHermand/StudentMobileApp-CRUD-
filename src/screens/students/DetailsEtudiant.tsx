@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   View,
   Text,
@@ -11,6 +12,7 @@ import {
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useEtudiants } from "../../context/EtudiantContext";
+import { useEtudiant } from "../../hooks/useEtudiant"; // Nouveau hook optionnel
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import LoadingOverlay from "../../components/common/LoadingOverlay";
@@ -19,9 +21,26 @@ export default function DetailsEtudiant() {
   const navigation = useNavigation();
   const route = useRoute();
   const { etudiantId } = route.params;
-  const { obtenirEtudiant, supprimerEtudiant, loading } = useEtudiants();
+  
+  // Option 1: Utiliser le nouveau hook dédié
+  const { etudiant, loading, error, recharger } = useEtudiant(etudiantId);
+  
 
-  const etudiant = obtenirEtudiant(etudiantId);
+
+  const { supprimerEtudiant } = useEtudiants();
+
+  useEffect(() => {
+    if (error) {
+      Alert.alert("Erreur", error, [
+        { text: "Réessayer", onPress: recharger },
+        { text: "Retour", onPress: () => navigation.goBack() }
+      ]);
+    }
+  }, [error]);
+
+  if (loading) {
+    return <LoadingOverlay visible={true} message="Chargement des détails..." />;
+  }
 
   if (!etudiant) {
     return (
@@ -49,9 +68,15 @@ export default function DetailsEtudiant() {
         {
           text: "Supprimer",
           style: "destructive",
-          onPress: () => {
-            supprimerEtudiant(etudiant.id);
-            navigation.goBack();
+          onPress: async () => {
+            try {
+              await supprimerEtudiant(etudiant.id);
+              Alert.alert("Succès", "Étudiant supprimé avec succès", [
+                { text: "OK", onPress: () => navigation.goBack() }
+              ]);
+            } catch (error) {
+              Alert.alert("Erreur", "Impossible de supprimer l'étudiant");
+            }
           },
         },
       ]
@@ -59,21 +84,24 @@ export default function DetailsEtudiant() {
   };
 
   const handleContact = (type: "phone" | "email") => {
-    if (type === "phone") {
+    if (type === "phone" && etudiant.telephone) {
       Linking.openURL(`tel:${etudiant.telephone}`);
-    } else {
+    } else if (type === "email") {
       Linking.openURL(`mailto:${etudiant.email}`);
     }
   };
 
   const getStatutColor = (statut: string) => {
-    switch (statut) {
+    switch (statut.toLowerCase()) {
       case "actif":
         return "#10b981";
+      case "suspendu":
       case "inactif":
         return "#f59e0b";
       case "diplome":
         return "#6366f1";
+      case "abandonne":
+        return "#dc2626";
       default:
         return "#6b7280";
     }
@@ -91,7 +119,13 @@ export default function DetailsEtudiant() {
     <ScrollView style={styles.container}>
       {/* Header avec photo et infos principales */}
       <View style={styles.header}>
-        <Image source={{ uri: etudiant.photo }} style={styles.photo} />
+        <Image 
+          source={{ 
+            uri: etudiant.photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(etudiant.prenom + ' ' + etudiant.nom)}&background=1e40af&color=fff&size=240` 
+          }} 
+          style={styles.photo} 
+          defaultSource={require('../../../assets/polytech.jpg')}
+        />
         <Text style={styles.nom}>
           {etudiant.prenom} {etudiant.nom}
         </Text>
@@ -132,7 +166,7 @@ export default function DetailsEtudiant() {
           <View style={styles.infoContent}>
             <Text style={styles.label}>Date d'inscription</Text>
             <Text style={styles.value}>
-              {formatDate(etudiant.dateInscription)}
+              {formatDate(etudiant.dateInscription )}
             </Text>
           </View>
         </View>
@@ -156,19 +190,21 @@ export default function DetailsEtudiant() {
           <Ionicons name="open-outline" size={16} color="#6b7280" />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.infoRow}
-          onPress={() => handleContact("phone")}
-        >
-          <Ionicons name="call-outline" size={20} color="#1e40af" />
-          <View style={styles.infoContent}>
-            <Text style={styles.label}>Téléphone</Text>
-            <Text style={[styles.value, styles.linkText]}>
-              {etudiant.telephone}
-            </Text>
-          </View>
-          <Ionicons name="open-outline" size={16} color="#6b7280" />
-        </TouchableOpacity>
+        {etudiant.telephone && (
+          <TouchableOpacity
+            style={styles.infoRow}
+            onPress={() => handleContact("phone")}
+          >
+            <Ionicons name="call-outline" size={20} color="#1e40af" />
+            <View style={styles.infoContent}>
+              <Text style={styles.label}>Téléphone</Text>
+              <Text style={[styles.value, styles.linkText]}>
+                {etudiant.telephone}
+              </Text>
+            </View>
+            <Ionicons name="open-outline" size={16} color="#6b7280" />
+          </TouchableOpacity>
+        )}
 
         <View style={styles.infoRow}>
           <Ionicons name="calendar-outline" size={20} color="#1e40af" />
@@ -180,11 +216,38 @@ export default function DetailsEtudiant() {
           </View>
         </View>
 
+        {etudiant.adresse && (
+          <View style={styles.infoRow}>
+            <Ionicons name="location-outline" size={20} color="#1e40af" />
+            <View style={styles.infoContent}>
+              <Text style={styles.label}>Adresse</Text>
+              <Text style={styles.value}>{etudiant.adresse}</Text>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* Métadonnées */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Informations Système</Text>
+        
         <View style={styles.infoRow}>
-          <Ionicons name="location-outline" size={20} color="#1e40af" />
+          <Ionicons name="time-outline" size={20} color="#1e40af" />
           <View style={styles.infoContent}>
-            <Text style={styles.label}>Adresse</Text>
-            <Text style={styles.value}>{etudiant.adresse}</Text>
+            <Text style={styles.label}>Créé le</Text>
+            <Text style={styles.value}>
+              {formatDate(etudiant.dateInscription)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Ionicons name="refresh-outline" size={20} color="#1e40af" />
+          <View style={styles.infoContent}>
+            <Text style={styles.label}>Dernière modification</Text>
+            <Text style={styles.value}>
+              {formatDate(etudiant.dateInscription)}
+            </Text>
           </View>
         </View>
       </View>
@@ -209,11 +272,20 @@ export default function DetailsEtudiant() {
           <Text style={styles.buttonText}>Supprimer</Text>
         </TouchableOpacity>
       </View>
-      <LoadingOverlay visible={loading} message="Suppression en cours..." />
+
+      {/* Bouton de rechargement */}
+      <TouchableOpacity
+        style={styles.refreshButton}
+        onPress={recharger}
+      >
+        <Ionicons name="refresh-outline" size={16} color="#1e40af" />
+        <Text style={styles.refreshButtonText}>Actualiser</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
+// Styles mis à jour
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -297,7 +369,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-around",
     padding: 16,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   editButton: {
     backgroundColor: "#1e40af",
@@ -324,6 +396,22 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     textAlign: "center",
     flex: 1,
+  },
+  refreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f3f4f6",
+    marginHorizontal: 16,
+    marginBottom: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  refreshButtonText: {
+    marginLeft: 6,
+    fontSize: 14,
+    color: "#1e40af",
+    fontWeight: "600",
   },
   errorContainer: {
     flex: 1,

@@ -102,10 +102,12 @@ function AppContent() {
   }
 
   return (
-    <NavigationContainer>
-      <StatusBar style="light" backgroundColor="#1e40af" />
-      <MainTabs />
-    </NavigationContainer>
+    <EtudiantProvider>
+      <NavigationContainer>
+        <StatusBar style="light" backgroundColor="#1e40af" />
+        <MainTabs />
+      </NavigationContainer>
+    </EtudiantProvider>
   );
 }
 

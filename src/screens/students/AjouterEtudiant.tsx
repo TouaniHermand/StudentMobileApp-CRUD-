@@ -31,7 +31,7 @@ interface FormData {
 
 export default function AjouterEtudiant() {
   const navigation = useNavigation();
-  const { ajouterEtudiant, loading } = useEtudiants();
+  const { creerEtudiant, loading } = useEtudiants();
 
   const [formData, setFormData] = useState<FormData>({
     matricule: "",
@@ -115,7 +115,7 @@ export default function AjouterEtudiant() {
         dateInscription: new Date().toISOString().split("T")[0],
       };
 
-      await ajouterEtudiant(nouvelEtudiant);
+      creerEtudiant(nouvelEtudiant);
 
       Alert.alert("Succès", "Étudiant ajouté avec succès", [
         { text: "OK", onPress: () => navigation.goBack() },
