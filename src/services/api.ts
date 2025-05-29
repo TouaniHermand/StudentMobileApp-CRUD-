@@ -9,8 +9,8 @@ export class BaseApiService {
     if (__DEV__) {
       this.baseURL = 
       Platform.OS === 'android' 
-        ? 'https://192.168.251.65:8443/api/v1'
-        : 'https://localhost:8443/api/v1';
+        ? 'http://192.168.251.65:8443/api/v1'
+        : 'http://localhost:8443/api/v1';
     } else {
       this.baseURL = 'https://votre-domaine.com/api/v1';
     }
